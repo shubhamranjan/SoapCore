@@ -14,6 +14,7 @@ using System.ServiceModel.Channels;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml;
+using System.Xml.Linq;
 
 namespace SoapCore.MessageEncoder
 {
@@ -63,51 +64,34 @@ namespace SoapCore.MessageEncoder
 
 		public XmlDictionaryReaderQuotas ReaderQuotas { get; }
 
-		public bool IsContentTypeSupported(string contentType)
+		public bool IsContentTypeSupported(MemoryStream stream)
 		{
-			if (contentType == null)
+			if (stream == null)
 			{
-				throw new ArgumentNullException(nameof(contentType));
+				throw new ArgumentNullException(nameof(stream));
 			}
 
-			if (IsContentTypeSupported(contentType, ContentType, MediaType))
+			try
 			{
-				return true;
+				stream.Seek(0, SeekOrigin.Begin);
+				XmlReader defaultReader = _supportXmlDictionaryReader ?
+					 XmlDictionaryReader.CreateTextReader(stream, _writeEncoding, ReaderQuotas, dictionaryReader => { }) :
+					XmlReader.Create(stream, new XmlReaderSettings());
+				var message = Message.CreateMessage(defaultReader, 0x10000, MessageVersion);
+			}
+			catch
+			{
+				return false;
+			}
+			finally
+			{
+				stream.Seek(0, SeekOrigin.Begin);
 			}
 
-			// we support a few extra content types for "none"
-			if (MessageVersion.Equals(MessageVersion.None))
-			{
-				const string rss1MediaType = "text/xml";
-				const string rss2MediaType = "application/rss+xml";
-				const string atomMediaType = "application/atom+xml";
-				const string htmlMediaType = "text/html";
-
-				if (IsContentTypeSupported(contentType, rss1MediaType, rss1MediaType))
-				{
-					return true;
-				}
-
-				if (IsContentTypeSupported(contentType, rss2MediaType, rss2MediaType))
-				{
-					return true;
-				}
-
-				if (IsContentTypeSupported(contentType, htmlMediaType, atomMediaType))
-				{
-					return true;
-				}
-
-				if (IsContentTypeSupported(contentType, atomMediaType, atomMediaType))
-				{
-					return true;
-				}
-			}
-
-			return false;
+			return true;
 		}
 
-		public async Task<Message> ReadMessageAsync(PipeReader pipeReader, int maxSizeOfHeaders, string contentType)
+		public async Task<Message> ReadMessageAsync(PipeReader pipeReader, int maxSizeOfHeaders)
 		{
 			if (pipeReader == null)
 			{
@@ -115,10 +99,10 @@ namespace SoapCore.MessageEncoder
 			}
 
 			var stream = new PipeStream(pipeReader, false);
-			return await ReadMessageAsync(stream, maxSizeOfHeaders, contentType);
+			return await ReadMessageAsync(stream, maxSizeOfHeaders);
 		}
 
-		public Task<Message> ReadMessageAsync(Stream stream, int maxSizeOfHeaders, string contentType)
+		public async Task<Message> ReadMessageAsync(Stream stream, int maxSizeOfHeaders)
 		{
 			if (stream == null)
 			{
@@ -129,9 +113,8 @@ namespace SoapCore.MessageEncoder
 			 	XmlDictionaryReader.CreateTextReader(stream, _writeEncoding, ReaderQuotas, dictionaryReader => { }) :
 				XmlReader.Create(stream, new XmlReaderSettings());
 
-			Message message = Message.CreateMessage(reader, maxSizeOfHeaders, MessageVersion);
+			return Message.CreateMessage(reader, maxSizeOfHeaders, MessageVersion);
 
-			return Task.FromResult(message);
 		}
 
 		public virtual async Task WriteMessageAsync(Message message, PipeWriter pipeWriter)
@@ -309,7 +292,7 @@ namespace SoapCore.MessageEncoder
 		internal virtual bool IsCharSetSupported(string charset)
 		{
 			return CharSet?.Equals(charset, StringComparison.OrdinalIgnoreCase)
-			       ?? false;
+				   ?? false;
 		}
 
 		private static bool IsUtf8Encoding(Encoding encoding)

@@ -40,6 +40,8 @@ namespace SoapCore
 		private readonly SerializerHelper _serializerHelper;
 		private readonly XmlNamespaceManager _xmlNamespaceManager;
 
+		private static readonly SoapMessageEncoder defaultSoap11Encoder = new SoapMessageEncoder(MessageVersion.Soap11, System.Text.Encoding.UTF8, new XmlDictionaryReaderQuotas(), true, true);
+
 		[Obsolete]
 		public SoapEndpointMiddleware(ILogger<SoapEndpointMiddleware<T_MESSAGE>> logger, RequestDelegate next, Type serviceType, string path, SoapEncoderOptions[] encoderOptions, SoapSerializer serializer, bool caseInsensitivePath, ISoapModelBounder soapModelBounder, Binding binding, bool httpGetEnabled, bool httpsGetEnabled)
 		{
@@ -154,40 +156,33 @@ namespace SoapCore
 			}
 		}
 
-#if ASPNET_21
-		private static Task WriteMessageAsync(SoapMessageEncoder messageEncoder, Message responseMessage, HttpContext httpContext)
-		{
-			return messageEncoder.WriteMessageAsync(responseMessage, httpContext.Response.Body);
-		}
 
-		private static Task<Message> ReadMessageAsync(HttpContext httpContext, SoapMessageEncoder messageEncoder)
-		{
-			return messageEncoder.ReadMessageAsync(httpContext.Request.Body, 0x10000, httpContext.Request.ContentType);
-		}
-#endif
-#if ASPNET_30
 		private static Task WriteMessageAsync(SoapMessageEncoder messageEncoder, Message responseMessage, HttpContext httpContext)
 		{
 			return messageEncoder.WriteMessageAsync(responseMessage, httpContext.Response.BodyWriter);
 		}
 
+		private static Task<Message> ReadMessageAsync(MemoryStream stream, SoapMessageEncoder messageEncoder)
+		{
+			return messageEncoder.ReadMessageAsync(stream, 0x10000);
+		}
+
 		private static Task<Message> ReadMessageAsync(HttpContext httpContext, SoapMessageEncoder messageEncoder)
 		{
-			return messageEncoder.ReadMessageAsync(httpContext.Request.BodyReader, 0x10000, httpContext.Request.ContentType);
+			return messageEncoder.ReadMessageAsync(httpContext.Request.BodyReader, 0x10000);
 		}
-#endif
 
 		private async Task ProcessMeta(HttpContext httpContext)
 		{
 			var baseUrl = httpContext.Request.Scheme + "://" + httpContext.Request.Host + httpContext.Request.PathBase + httpContext.Request.Path;
 			var bodyWriter = _serializer == SoapSerializer.XmlSerializer ? new MetaBodyWriter(_service, baseUrl, _binding, _xmlNamespaceManager) : (BodyWriter)new MetaWCFBodyWriter(_service, baseUrl, _binding);
-			var responseMessage = Message.CreateMessage(_messageEncoders[0].MessageVersion, null, bodyWriter);
+			var responseMessage = Message.CreateMessage(MessageVersion.Soap11, null, bodyWriter);
 			responseMessage = new MetaMessage(responseMessage, _service, _binding, _xmlNamespaceManager);
 
 			//we should use text/xml in wsdl page for browser compability.
 			httpContext.Response.ContentType = "text/xml;charset=UTF-8";// _messageEncoders[0].ContentType;
 
-			await WriteMessageAsync(_messageEncoders[0], responseMessage, httpContext);
+			await WriteMessageAsync(defaultSoap11Encoder, responseMessage, httpContext);
 		}
 
 		private async Task ProcessOperation(HttpContext httpContext, IServiceProvider serviceProvider)
@@ -212,7 +207,7 @@ namespace SoapCore
 
 			foreach (var encoder in _messageEncoders)
 			{
-				if (encoder.IsContentTypeSupported(httpContext.Request.ContentType))
+				if (encoder.IsContentTypeSupported(memoryStream))
 				{
 					messageEncoder = encoder;
 					break;
@@ -230,6 +225,7 @@ namespace SoapCore
 				await WriteErrorResponseMessage(ex, StatusCodes.Status500InternalServerError, serviceProvider, null, messageEncoder, httpContext);
 				return;
 			}
+
 			var messageFilters = serviceProvider.GetServices<IMessageFilter>().ToArray();
 			var asyncMessageFilters = serviceProvider.GetServices<IAsyncMessageFilter>().ToArray();
 
