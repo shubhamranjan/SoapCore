@@ -29,7 +29,7 @@ namespace SoapCore
 		/// </summary>
 		public bool HttpsGetEnabled { get; set; } = true;
 
-		public bool OmitXmlDeclaration { get; set; } = true;
+		public bool OmitXmlDeclaration { get; set; } = false;
 
 		public bool IndentXml { get; set; } = true;
 
