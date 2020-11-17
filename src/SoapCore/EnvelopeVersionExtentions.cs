@@ -17,15 +17,9 @@ namespace SoapCore
 
 		public static string NamespacePrefix(this EnvelopeVersion envelopeVersion, XmlNamespaceManager namespaces)
 		{
-			string prefix;
-			if (envelopeVersion == EnvelopeVersion.Soap11)
-			{
-				prefix = Namespaces.AddNamespaceIfNotAlreadyPresentAndGetPrefix(namespaces, "s", Namespaces.SOAP11_ENVELOPE_NS);
-				return prefix;
-			}
-
-			prefix = Namespaces.AddNamespaceIfNotAlreadyPresentAndGetPrefix(namespaces, "s", Namespaces.SOAP12_ENVELOPE_NS);
-			return prefix;
+			return SOAP_PREFIX;
 		}
+
+		const string SOAP_PREFIX = "soap";
 	}
 }
